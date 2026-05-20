@@ -83,3 +83,29 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 ss -lntp | grep ':3000'
 systemctl status caddy --no-pager
 ```
+
+## NVIDIA AIR 保活
+
+如果 VPS 运行在 NVIDIA AIR simulation 上, 可以安装 `nvps` 定时延后 `sleep_at`:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/nvps.sh) install
+```
+
+安装时根据提示输入:
+
+- `NVIDIA AIR API Key`
+- `Simulation ID`
+
+安装后可直接使用:
+
+```bash
+nvps status
+nvps logs
+nvps next
+nvps run
+nvps config
+nvps uninstall
+```
+
+默认开机 5 分钟后运行一次, 之后每 12 小时运行一次, 每次把 simulation 的 `sleep_at` 推到 71 小时后。API Key 会保存到 `/etc/nvps.env`, 权限为 `600`。
