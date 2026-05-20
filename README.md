@@ -1,6 +1,6 @@
-# v2ray_wss
+# v2ray_wsss
 
-VLESS / VMess over WebSocket + TLS 一键部署脚本，默认使用 Caddy 作为前置反代。
+VLESS / VMesss over WebSocket + TLS 一键部署脚本，默认使用 Caddy 作为前置反代。
 
 ## 安装
 
