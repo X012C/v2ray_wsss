@@ -634,7 +634,7 @@ echo -e "$yellow 路径 (path) = ${cyan}/${path}$none"
 echo -e "$yellow 底层传输安全 (TLS) = ${cyan}tls$none"
 echo
 echo "---------- V2Ray VLESS URL ----------"
-v2ray_vless_url="vless://${v2ray_id}@${domain}:${external_port}?encryption=none&security=tls&type=ws&host=${domain}&path=${path}#VLESS_WSS_${domain}"
+v2ray_vless_url="vless://${v2ray_id}@${domain}:${external_port}?encryption=none&security=tls&type=ws&host=${domain}&path=%2F${path}#VLESS_WSS_${domain}"
 echo -e "${cyan}${v2ray_vless_url}${none}"
 echo
 sleep 3
@@ -679,7 +679,7 @@ if [[ "$switchVmess" == [yY] ]]; then
 "net": "ws",
 "type": "none",
 "host": "'${domain}'",
-"path": "'${path}'",
+"path": "/'${path}'",
 "tls": "tls"
 }' | base64 -w 0)"
 

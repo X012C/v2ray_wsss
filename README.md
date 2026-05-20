@@ -4,13 +4,13 @@ apt update
 apt install -y curl
 ```
 ```
-bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh)
 ```
 
 ## 带参数安装
 
 ```bash
-bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口
 ```
 
 参数说明:
@@ -27,5 +27,48 @@ bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh) 域名 �
 例如 VPS 内部端口 `3000` 映射到外部端口 `12345`:
 
 ```bash
-bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh) example.com 4 "" mypath 3000 12345
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) example.com 4 "" mypath 3000 12345
+```
+
+## 卸载
+
+标准卸载:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) --remove
+apt purge -y caddy
+rm -f /etc/apt/sources.list.d/caddy-stable.list
+rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+apt autoremove -y
+```
+
+如果是空 VPS, 想清理后重新安装, 可以额外清掉旧配置和占用端口的旧进程:
+
+```bash
+systemctl stop caddy 2>/dev/null
+systemctl stop v2ray 2>/dev/null
+systemctl stop xray 2>/dev/null
+pkill -f xray 2>/dev/null
+pkill -f v2ray 2>/dev/null
+
+rm -rf /etc/caddy
+rm -rf /usr/local/etc/v2ray
+rm -rf /usr/local/etc/xray
+rm -rf /var/log/v2ray
+rm -rf /var/log/xray
+
+ss -lntp | grep ':3000'
+```
+
+如果最后一条没有输出, 表示 `3000` 端口已经空出来, 可以重新安装。NAT VPS 示例:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) node.mailx.de5.net 4 "" x2050 3000 16423
+```
+
+安装完成后检查 `3000` 应该由 Caddy 监听:
+
+```bash
+ss -lntp | grep ':3000'
+systemctl status caddy --no-pager
 ```
