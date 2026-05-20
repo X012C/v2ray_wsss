@@ -10,7 +10,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 ## 带参数安装
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口 节点名称
 ```
 
 参数说明:
@@ -21,49 +21,60 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 - `path`: WebSocket 分流路径, 不要带 `/`
 - `本机监听端口`: Caddy 在 VPS 内部监听的端口, 普通 VPS 默认 `443`; 内外端口映射时可填内部端口, 例如 `3000`
 - `外部端口`: 客户端节点里填写的端口, 普通 VPS 默认等于本机监听端口; 内外端口映射时填商家分配的外部端口
+- `节点名称`: 客户端里显示的节点名, 例如 `US-DSX-01` 或 `CA-NVIDIA-01`; 留空则脚本根据公网 IP 地理库粗略生成一个默认名称
 
 注意: Caddy 申请公开 TLS 证书通常仍需要域名的 `80/443` 可访问。只有高位外部端口的 NAT VPS, 需要先确认服务商端口映射或证书方案可用。
+
+注意: IP 地理库不一定等于真实机房地址。如果你知道 VPS 实际位置, 建议手动传入 `节点名称`。
 
 例如 VPS 内部端口 `3000` 映射到外部端口 `12345`:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) example.com 4 "" mypath 3000 12345
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) example.com 4 "" mypath 3000 12345 CA-NVIDIA-01
 ```
+
+## NAT VPS + Cloudflare DNS-01
+
+如果 NAT VPS 没有标准外部 `80/443` 端口, 可以用 Cloudflare DNS-01 自动申请证书。先在 Cloudflare 创建 API Token:
+
+- 权限: `Zone - DNS - Edit`, `Zone - Zone - Read`
+- 范围: 选择托管节点域名的 zone, 例如 `mailx.de5.net`
+
+然后在 VPS 上设置环境变量后安装:
+
+```bash
+export CF_Token="你的Cloudflare_API_Token"
+export CF_Zone_ID="你的Cloudflare_Zone_ID"
+
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) node.example.com 4 "" mypath 3000 12345 CA-NODE-01
+```
+
+脚本检测到 `CF_Token` 和 `CF_Zone_ID` 后, 会自动安装 acme.sh, 通过 DNS-01 申请证书, 并让 Caddy 使用证书文件。不要把真实 API Token 写进公开仓库或发给别人。
 
 ## 卸载
 
-标准卸载:
+交互确认后卸载:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) --remove
-apt purge -y caddy
-rm -f /etc/apt/sources.list.d/caddy-stable.list
-rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-apt autoremove -y
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/uninstall.sh)
 ```
 
-如果是空 VPS, 想清理后重新安装, 可以额外清掉旧配置和占用端口的旧进程:
+跳过确认直接卸载:
 
 ```bash
-systemctl stop caddy 2>/dev/null
-systemctl stop v2ray 2>/dev/null
-systemctl stop xray 2>/dev/null
-pkill -f xray 2>/dev/null
-pkill -f v2ray 2>/dev/null
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/uninstall.sh) --yes
+```
 
-rm -rf /etc/caddy
-rm -rf /usr/local/etc/v2ray
-rm -rf /usr/local/etc/xray
-rm -rf /var/log/v2ray
-rm -rf /var/log/xray
+卸载后如果准备重装, 确认 NAT 内部端口已经空出来:
 
+```bash
 ss -lntp | grep ':3000'
 ```
 
-如果最后一条没有输出, 表示 `3000` 端口已经空出来, 可以重新安装。NAT VPS 示例:
+如果最后一条没有输出, 可以重新安装。NAT VPS 示例:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) node.mailx.de5.net 4 "" x2050 3000 16423
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) node.example.com 4 "" mypath 3000 12345 CA-NODE-01
 ```
 
 安装完成后检查 `3000` 应该由 Caddy 监听:

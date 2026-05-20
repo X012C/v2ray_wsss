@@ -17,6 +17,83 @@ is_valid_port() {
     [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
 }
 
+sanitize_node_name() {
+    echo -n "$1" | tr ' /#?&' '_____' | sed -E 's/[^A-Za-z0-9._-]/_/g; s/_+/_/g; s/^_//; s/_$//'
+}
+
+detect_node_location() {
+    local lookup_ip="$1"
+    local geo_json
+    local country_code
+    local city
+    local region
+
+    [ -z "$lookup_ip" ] && return
+
+    geo_json=$(curl -4s --max-time 4 "https://ipapi.co/${lookup_ip}/json/" 2>/dev/null)
+    country_code=$(echo "$geo_json" | sed -n 's/.*"country_code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    city=$(echo "$geo_json" | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    region=$(echo "$geo_json" | sed -n 's/.*"region_code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+
+    if [[ -z "$country_code" ]]; then
+        geo_json=$(curl -4s --max-time 4 "https://ipinfo.io/${lookup_ip}/json" 2>/dev/null)
+        country_code=$(echo "$geo_json" | sed -n 's/.*"country"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+        city=$(echo "$geo_json" | sed -n 's/.*"city"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+        region=$(echo "$geo_json" | sed -n 's/.*"region"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    fi
+
+    country_code=$(echo -n "$country_code" | tr '[:lower:]' '[:upper:]')
+    city=$(sanitize_node_name "$city")
+    region=$(sanitize_node_name "$region")
+
+    if [[ -n "$country_code" && -n "$city" ]]; then
+        echo "${country_code}-${city}"
+    elif [[ -n "$country_code" && -n "$region" ]]; then
+        echo "${country_code}-${region}"
+    elif [[ -n "$country_code" ]]; then
+        echo "${country_code}"
+    fi
+}
+
+install_dns01_cert_if_configured() {
+    if [[ -z "$CF_Token" || -z "$CF_Zone_ID" ]]; then
+        return 0
+    fi
+
+    echo
+    echo -e "$yellow检测到 Cloudflare DNS-01 配置, 使用 DNS 验证申请证书$none"
+    echo "----------------------------------------------------------------"
+
+    if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+        curl https://get.acme.sh | sh -s email=admin@example.com
+    fi
+
+    if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
+        echo -e "$red acme.sh 安装失败, 请检查网络后重试$none"
+        exit 1
+    fi
+
+    export CF_Token
+    export CF_Zone_ID
+
+    "$HOME/.acme.sh/acme.sh" --set-account-conf --accountconf "$HOME/.acme.sh/account.conf" --name CF_Token --value "$CF_Token"
+    "$HOME/.acme.sh/acme.sh" --set-account-conf --accountconf "$HOME/.acme.sh/account.conf" --name CF_Zone_ID --value "$CF_Zone_ID"
+
+    "$HOME/.acme.sh/acme.sh" --issue --dns dns_cf -d "$domain" --server letsencrypt
+
+    mkdir -p "/etc/caddy/certs/$domain"
+    "$HOME/.acme.sh/acme.sh" --install-cert -d "$domain" \
+        --key-file "/etc/caddy/certs/$domain/key.pem" \
+        --fullchain-file "/etc/caddy/certs/$domain/fullchain.pem" \
+        --reloadcmd "systemctl reload caddy 2>/dev/null || true"
+
+    chown -R caddy:caddy /etc/caddy/certs
+    chmod 600 "/etc/caddy/certs/$domain/key.pem"
+    chmod 644 "/etc/caddy/certs/$domain/fullchain.pem"
+
+    caddy_tls_line="tls /etc/caddy/certs/$domain/fullchain.pem /etc/caddy/certs/$domain/key.pem"
+}
+
 warn() {
     echo -e "\n$yellow $1 $none\n"
 }
@@ -34,7 +111,7 @@ echo
 echo -e "$yellow此脚本仅兼容于Debian 10+系统. 如果你的系统不符合,请Ctrl+C退出脚本$none"
 echo -e "可以去 ${cyan}https://github.com/crazypeace/v2ray_wss${none} 查看脚本整体思路和关键命令, 以便针对你自己的系统做出调整."
 echo -e "有问题加群 ${cyan}https://t.me/+q5WPfGjtwukyZjhl${none}"
-echo "本脚本支持带参数执行, 在参数中输入域名, 网络栈, UUID, path, 本机监听端口, 外部端口. 详见GitHub."
+echo "本脚本支持带参数执行, 在参数中输入域名, 网络栈, UUID, path, 本机监听端口, 外部端口, 节点名称. 详见GitHub."
 echo "----------------------------------------------------------------"
 
 # 本机 IP
@@ -63,9 +140,11 @@ default_uuid=$(curl -sL https://www.uuidtools.com/api/generate/v3/namespace/ns:d
 # 随机的端口
 default_port=$(shuf -i20001-65535 -n1)
 default_web_port=443
+has_args=0
 
 # 执行脚本带参数
 if [ $# -ge 1 ]; then
+    has_args=1
 
     # 第1个参数是域名
     domain=${1}
@@ -115,6 +194,9 @@ if [ $# -ge 1 ]; then
         exit 1
     fi
 
+    # 第7个参数是节点名称, 例如 US-DSX-01; 留空则根据IP地理库自动生成一个默认名称
+    node_name=${7}
+
     proxy_site="https://zelikk.blogspot.com"
 
     echo -e "domain: ${domain}"
@@ -124,6 +206,7 @@ if [ $# -ge 1 ]; then
     echo -e "path: ${path}"
     echo -e "caddy_port: ${caddy_port}"
     echo -e "external_port: ${external_port}"
+    echo -e "node_name: ${node_name}"
     echo -e "proxy_site: ${proxy_site}"
 fi
 
@@ -272,6 +355,47 @@ if [[ -z $external_port ]]; then
             error
         fi
     done
+fi
+
+# 节点名称
+auto_node_location=$(detect_node_location "$ip")
+if [[ -z "$auto_node_location" ]]; then
+    auto_node_location=$(detect_node_location "$IPv4")
+fi
+if [[ -z "$auto_node_location" ]]; then
+    auto_node_name="VLESS_WSS_${domain}"
+else
+    auto_node_name="${auto_node_location}-WSS"
+fi
+
+if [[ -z $node_name && "$has_args" == "1" ]]; then
+    node_name=$auto_node_name
+    echo -e "$yellow 节点名称Node name = ${cyan}${node_name}$none"
+elif [[ -z $node_name ]]; then
+    while :; do
+        echo -e "请输入 "$yellow"节点名称"$none" , 例如 ${cyan}US-DSX-01${none} 或 ${cyan}CA-NVIDIA-01${none}"
+        echo "Input node name. It only changes the display name in clients."
+        echo -e "脚本会根据公网IP粗略猜测地理位置, 但IP库可能不准; 不确定时建议手动填写。"
+        read -p "$(echo -e "(默认node name: [${cyan}${auto_node_name}${none}]):")" node_name
+        [[ -z $node_name ]] && node_name=$auto_node_name
+        node_name=$(sanitize_node_name "$node_name")
+
+        case $node_name in
+        "")
+            error
+            ;;
+        *)
+            echo
+            echo
+            echo -e "$yellow 节点名称Node name = ${cyan}${node_name}$none"
+            echo "----------------------------------------------------------------"
+            echo
+            break
+            ;;
+        esac
+    done
+else
+    node_name=$(sanitize_node_name "$node_name")
 fi
 
 # 域名
@@ -562,10 +686,12 @@ if [[ "$caddy_port" == "443" ]]; then
 else
     caddy_site="${domain}:${caddy_port}"
 fi
+caddy_tls_line="tls Y3JhenlwZWFjZQ@gmail.com"
+install_dns01_cert_if_configured
 cat >/etc/caddy/Caddyfile <<-EOF
 $caddy_site
 {
-    tls Y3JhenlwZWFjZQ@gmail.com
+    $caddy_tls_line
     encode gzip
 
 #    多用户 多path
@@ -624,6 +750,7 @@ echo -e "$green ---提示..这是 VLESS 服务器配置--- $none"
 echo -e "$yellow 地址 (Address) = $cyan${domain}$none"
 echo -e "$yellow 端口 (Port) = ${cyan}${external_port}${none}"
 echo -e "$yellow 本机监听端口 (Local listen port) = ${cyan}${caddy_port}${none}"
+echo -e "$yellow 节点名称 (Node name) = ${cyan}${node_name}${none}"
 echo -e "$yellow 用户ID (User ID / UUID) = $cyan${v2ray_id}$none"
 echo -e "$yellow 流控 (Flow) = ${cyan}空${none}"
 echo -e "$yellow 加密 (Encryption) = ${cyan}none${none}"
@@ -634,7 +761,7 @@ echo -e "$yellow 路径 (path) = ${cyan}/${path}$none"
 echo -e "$yellow 底层传输安全 (TLS) = ${cyan}tls$none"
 echo
 echo "---------- V2Ray VLESS URL ----------"
-v2ray_vless_url="vless://${v2ray_id}@${domain}:${external_port}?encryption=none&security=tls&type=ws&host=${domain}&path=%2F${path}#VLESS_WSS_${domain}"
+v2ray_vless_url="vless://${v2ray_id}@${domain}:${external_port}?encryption=none&security=tls&type=ws&host=${domain}&path=%2F${path}#${node_name}"
 echo -e "${cyan}${v2ray_vless_url}${none}"
 echo
 sleep 3
@@ -671,7 +798,7 @@ if [[ "$switchVmess" == [yY] ]]; then
     echo "---------- V2Ray Vmess URL ----------"
     v2ray_vmess_url="vmess://$(echo -n '{
 "v": "2",
-"ps": "Vmess_WSS_'${domain}'",
+"ps": "'${node_name}'",
 "add": "'${domain}'",
 "port": "'${external_port}'",
 "id": "'${v2ray_id}'",
