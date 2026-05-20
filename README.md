@@ -4,13 +4,13 @@ apt update
 apt install -y curl
 ```
 ```
-bash <(curl -L https://github.com/X012C/v2ray_wss/raw/main/install.sh)
+bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh)
 ```
 
 ## 带参数安装
 
 ```bash
-bash <(curl -L https://github.com/X012C/v2ray_wss/raw/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口
+bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh) 域名 网络栈 UUID path 本机监听端口 外部端口
 ```
 
 参数说明:
@@ -27,5 +27,5 @@ bash <(curl -L https://github.com/X012C/v2ray_wss/raw/main/install.sh) 域名 �
 例如 VPS 内部端口 `3000` 映射到外部端口 `12345`:
 
 ```bash
-bash <(curl -L https://github.com/X012C/v2ray_wss/raw/main/install.sh) example.com 4 "" mypath 3000 12345
+bash <(curl -L https://github.com/X012C/v2ray_wsss/raw/main/install.sh) example.com 4 "" mypath 3000 12345
 ```
