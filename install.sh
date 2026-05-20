@@ -194,7 +194,7 @@ if [ $# -ge 1 ]; then
         exit 1
     fi
 
-    # 第7个参数是节点名称, 例如 US-DSX-01; 留空则根据IP地理库自动生成一个默认名称
+    # 第7个参数是节点名称, 例如 US-NODE-01; 留空则根据IP地理库自动生成一个默认名称
     node_name=${7}
 
     proxy_site="https://zelikk.blogspot.com"
@@ -373,7 +373,7 @@ if [[ -z $node_name && "$has_args" == "1" ]]; then
     echo -e "$yellow 节点名称Node name = ${cyan}${node_name}$none"
 elif [[ -z $node_name ]]; then
     while :; do
-        echo -e "请输入 "$yellow"节点名称"$none" , 例如 ${cyan}US-DSX-01${none} 或 ${cyan}CA-NVIDIA-01${none}"
+        echo -e "请输入 "$yellow"节点名称"$none" , 例如 ${cyan}US-NODE-01${none} 或 ${cyan}CA-NODE-01${none}"
         echo "Input node name. It only changes the display name in clients."
         echo -e "脚本会根据公网IP粗略猜测地理位置, 但IP库可能不准; 不确定时建议手动填写。"
         read -p "$(echo -e "(默认node name: [${cyan}${auto_node_name}${none}]):")" node_name

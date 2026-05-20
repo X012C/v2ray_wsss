@@ -21,7 +21,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 - `path`: WebSocket 分流路径, 不要带 `/`
 - `本机监听端口`: Caddy 在 VPS 内部监听的端口, 普通 VPS 默认 `443`; 内外端口映射时可填内部端口, 例如 `3000`
 - `外部端口`: 客户端节点里填写的端口, 普通 VPS 默认等于本机监听端口; 内外端口映射时填商家分配的外部端口
-- `节点名称`: 客户端里显示的节点名, 例如 `US-DSX-01` 或 `CA-NVIDIA-01`; 留空则脚本根据公网 IP 地理库粗略生成一个默认名称
+- `节点名称`: 客户端里显示的节点名, 例如 `US-NODE-01` 或 `CA-NODE-01`; 留空则脚本根据公网 IP 地理库粗略生成一个默认名称
 
 注意: Caddy 申请公开 TLS 证书通常仍需要域名的 `80/443` 可访问。只有高位外部端口的 NAT VPS, 需要先确认服务商端口映射或证书方案可用。
 
@@ -30,7 +30,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 例如 VPS 内部端口 `3000` 映射到外部端口 `12345`:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) example.com 4 "" mypath 3000 12345 CA-NVIDIA-01
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/install.sh) example.com 4 "" mypath 3000 12345 CA-NODE-01
 ```
 
 ## NAT VPS + Cloudflare DNS-01
@@ -38,7 +38,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 如果 NAT VPS 没有标准外部 `80/443` 端口, 可以用 Cloudflare DNS-01 自动申请证书。先在 Cloudflare 创建 API Token:
 
 - 权限: `Zone - DNS - Edit`, `Zone - Zone - Read`
-- 范围: 选择托管节点域名的 zone, 例如 `mailx.de5.net`
+- 范围: 选择托管节点域名的 zone, 例如 `example.com`
 
 然后在 VPS 上设置环境变量后安装:
 
