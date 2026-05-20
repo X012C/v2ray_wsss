@@ -13,6 +13,10 @@ error() {
     echo -e "\n$red 输入错误! $none\n"
 }
 
+is_valid_port() {
+    [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
 warn() {
     echo -e "\n$yellow $1 $none\n"
 }
@@ -30,7 +34,7 @@ echo
 echo -e "$yellow此脚本仅兼容于Debian 10+系统. 如果你的系统不符合,请Ctrl+C退出脚本$none"
 echo -e "可以去 ${cyan}https://github.com/crazypeace/v2ray_wss${none} 查看脚本整体思路和关键命令, 以便针对你自己的系统做出调整."
 echo -e "有问题加群 ${cyan}https://t.me/+q5WPfGjtwukyZjhl${none}"
-echo "本脚本支持带参数执行, 在参数中输入域名, 网络栈, UUID, path. 详见GitHub."
+echo "本脚本支持带参数执行, 在参数中输入域名, 网络栈, UUID, path, 本机监听端口, 外部端口. 详见GitHub."
 echo "----------------------------------------------------------------"
 
 # 本机 IP
@@ -58,6 +62,7 @@ default_uuid=$(curl -sL https://www.uuidtools.com/api/generate/v3/namespace/ns:d
 
 # 随机的端口
 default_port=$(shuf -i20001-65535 -n1)
+default_web_port=443
 
 # 执行脚本带参数
 if [ $# -ge 1 ]; then
@@ -92,6 +97,24 @@ if [ $# -ge 1 ]; then
         path=$(echo -n $v2ray_id | tail -c 12)
     fi
 
+    # 第5个参数是Caddy本机监听端口, 普通VPS默认443; NAT VPS可填内部映射端口, 如3000
+    caddy_port=${5}
+    if [[ -z $caddy_port ]]; then
+        caddy_port=${default_web_port}
+    elif ! is_valid_port "$caddy_port"; then
+        echo -e "$red 本机监听端口错误Local listen port error: $caddy_port $none"
+        exit 1
+    fi
+
+    # 第6个参数是客户端使用的外部端口, 普通VPS默认同本机监听端口; NAT VPS填商家分配的外部端口
+    external_port=${6}
+    if [[ -z $external_port ]]; then
+        external_port=${caddy_port}
+    elif ! is_valid_port "$external_port"; then
+        echo -e "$red 外部端口错误External port error: $external_port $none"
+        exit 1
+    fi
+
     proxy_site="https://zelikk.blogspot.com"
 
     echo -e "domain: ${domain}"
@@ -99,6 +122,8 @@ if [ $# -ge 1 ]; then
     echo -e "v2ray_id: ${v2ray_id}"
     echo -e "v2ray_port: ${v2ray_port}"
     echo -e "path: ${path}"
+    echo -e "caddy_port: ${caddy_port}"
+    echo -e "external_port: ${external_port}"
     echo -e "proxy_site: ${proxy_site}"
 fi
 
@@ -206,6 +231,46 @@ if [[ -z $v2ray_port ]]; then
             error
             ;;
         esac
+    done
+fi
+
+# Caddy本机监听端口
+if [[ -z $caddy_port ]]; then
+    while :; do
+        echo -e "请输入 "$yellow"Caddy 本机监听端口"$none" ["$magenta"1-65535"$none"]"
+        echo -e "普通VPS直接回车使用 ${cyan}443${none}; 如果是内外端口映射, 请填VPS内部端口, 例如 ${cyan}3000${none}"
+        read -p "$(echo -e "(默认listen port: ${cyan}${default_web_port}$none):")" caddy_port
+        [ -z "$caddy_port" ] && caddy_port=$default_web_port
+        if is_valid_port "$caddy_port"; then
+            echo
+            echo
+            echo -e "$yellow Caddy 本机监听端口Local listen port = $cyan$caddy_port$none"
+            echo "----------------------------------------------------------------"
+            echo
+            break
+        else
+            error
+        fi
+    done
+fi
+
+# 节点外部端口
+if [[ -z $external_port ]]; then
+    while :; do
+        echo -e "请输入 "$yellow"节点外部端口"$none" ["$magenta"1-65535"$none"]"
+        echo -e "普通VPS直接回车使用本机监听端口; 如果是内外端口映射, 请填客户端连接时看到的外部端口"
+        read -p "$(echo -e "(默认external port: ${cyan}${caddy_port}$none):")" external_port
+        [ -z "$external_port" ] && external_port=$caddy_port
+        if is_valid_port "$external_port"; then
+            echo
+            echo
+            echo -e "$yellow 节点外部端口External port = $cyan$external_port$none"
+            echo "----------------------------------------------------------------"
+            echo
+            break
+        else
+            error
+        fi
     done
 fi
 
@@ -492,8 +557,13 @@ EOF
 echo
 echo -e "$yellow配置 /etc/caddy/Caddyfile$none"
 echo "----------------------------------------------------------------"
+if [[ "$caddy_port" == "443" ]]; then
+    caddy_site="$domain"
+else
+    caddy_site="${domain}:${caddy_port}"
+fi
 cat >/etc/caddy/Caddyfile <<-EOF
-$domain
+$caddy_site
 {
     tls Y3JhenlwZWFjZQ@gmail.com
     encode gzip
@@ -552,7 +622,8 @@ echo
 echo "---------- V2Ray 配置信息 -------------"
 echo -e "$green ---提示..这是 VLESS 服务器配置--- $none"
 echo -e "$yellow 地址 (Address) = $cyan${domain}$none"
-echo -e "$yellow 端口 (Port) = ${cyan}443${none}"
+echo -e "$yellow 端口 (Port) = ${cyan}${external_port}${none}"
+echo -e "$yellow 本机监听端口 (Local listen port) = ${cyan}${caddy_port}${none}"
 echo -e "$yellow 用户ID (User ID / UUID) = $cyan${v2ray_id}$none"
 echo -e "$yellow 流控 (Flow) = ${cyan}空${none}"
 echo -e "$yellow 加密 (Encryption) = ${cyan}none${none}"
@@ -563,7 +634,7 @@ echo -e "$yellow 路径 (path) = ${cyan}/${path}$none"
 echo -e "$yellow 底层传输安全 (TLS) = ${cyan}tls$none"
 echo
 echo "---------- V2Ray VLESS URL ----------"
-v2ray_vless_url="vless://${v2ray_id}@${domain}:443?encryption=none&security=tls&type=ws&host=${domain}&path=${path}#VLESS_WSS_${domain}"
+v2ray_vless_url="vless://${v2ray_id}@${domain}:${external_port}?encryption=none&security=tls&type=ws&host=${domain}&path=${path}#VLESS_WSS_${domain}"
 echo -e "${cyan}${v2ray_vless_url}${none}"
 echo
 sleep 3
@@ -602,7 +673,7 @@ if [[ "$switchVmess" == [yY] ]]; then
 "v": "2",
 "ps": "Vmess_WSS_'${domain}'",
 "add": "'${domain}'",
-"port": "443",
+"port": "'${external_port}'",
 "id": "'${v2ray_id}'",
 "aid": "0",
 "net": "ws",
