@@ -21,6 +21,7 @@ nvps - NVIDIA AIR simulation keepalive helper
 
 Usage:
   nvps install      Install or update the systemd timer
+  nvps install --api-key KEY --simulation-id ID [--extend-hours 71]
   nvps uninstall    Disable and remove the timer, service, and config
   nvps status       Show timer/service status
   nvps logs         Show recent keepalive logs
@@ -128,19 +129,62 @@ install_cmd() {
     local simulation_id
     local api_base
     local extend_hours
+    local run_now="n"
 
     load_env
+
+    api_key="${NVIDIA_AIR_API_KEY:-}"
+    simulation_id="${SIMULATION_ID:-}"
+    api_base="$NVIDIA_AIR_API_BASE"
+    extend_hours="$NVPS_EXTEND_HOURS"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --api-key)
+            api_key="${2:-}"
+            shift 2
+            ;;
+        --simulation-id)
+            simulation_id="${2:-}"
+            shift 2
+            ;;
+        --api-base)
+            api_base="${2:-}"
+            shift 2
+            ;;
+        --extend-hours)
+            extend_hours="${2:-}"
+            shift 2
+            ;;
+        --run-now)
+            run_now="y"
+            shift
+            ;;
+        *)
+            echo -e "$red Unknown install option: $1 $none" >&2
+            exit 1
+            ;;
+        esac
+    done
 
     echo -e "$yellow Install or update NVIDIA AIR keepalive timer $none"
     echo "----------------------------------------------------------------"
     echo "The API key will be stored in $NVPS_ENV with 600 permissions."
     echo
 
-    read -r -s -p "NVIDIA AIR API Key: " api_key
-    echo
-    read -r -p "Simulation ID: " simulation_id
-    read -r -p "API base [$NVIDIA_AIR_API_BASE]: " api_base
-    read -r -p "Extend hours [$NVPS_EXTEND_HOURS]: " extend_hours
+    if [[ -z "$api_key" ]]; then
+        read -r -s -p "NVIDIA AIR API Key: " api_key
+        echo
+    fi
+    if [[ -z "$simulation_id" ]]; then
+        read -r -p "Simulation ID: " simulation_id
+    fi
+    if [[ -z "$api_base" ]]; then
+        read -r -p "API base [$NVIDIA_AIR_API_BASE]: " api_base
+    fi
+    if [[ -z "$extend_hours" ]]; then
+        read -r -p "Extend hours [$NVPS_EXTEND_HOURS]: " extend_hours
+    fi
 
     api_base="${api_base:-$NVIDIA_AIR_API_BASE}"
     extend_hours="${extend_hours:-$NVPS_EXTEND_HOURS}"
@@ -168,6 +212,10 @@ install_cmd() {
     echo -e "  ${cyan}nvps run${none}"
     echo "Check status:"
     echo -e "  ${cyan}nvps status${none}"
+
+    if [[ "$run_now" == "y" ]]; then
+        "$NVPS_BIN" run
+    fi
 }
 
 uninstall_cmd() {

@@ -4,6 +4,16 @@ VLESS / VMess over WebSocket + TLS 一键部署脚本，默认使用 Caddy 作�
 
 ## 安装
 
+完全整合安装，包含节点、DNS-01 证书、安装测试和 NVIDIA AIR 保活:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/nvpss.sh) \
+  node.example.com 4 "" mypath 3000 12345 US-NODE-01 \
+  your-email@gmail.com "$CF_Token" "$CF_Zone_ID" "$NVIDIA_AIR_API_KEY" "$SIMULATION_ID"
+```
+
+只安装节点:
+
 ```bash
 apt update
 apt install -y curl
@@ -96,3 +106,5 @@ nvps uninstall
 ```
 
 默认开机后运行一次，之后每 12 小时运行一次。配置保存在 `/etc/nvps.env`。
+
+`nvpss.sh` 会自动调用 `nvps.sh` 安装保活 timer；单独使用 `nvps.sh` 适合只补装或维护保活。

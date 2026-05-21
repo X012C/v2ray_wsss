@@ -185,8 +185,12 @@ EOF
     echo
     echo -e "$yellow安装测试命令已保存到 ${cyan}${test_file}${none}"
     echo -e "现在运行基础测试吗? 会测试 Caddy 配置、本机端口和外部端口。"
-    read -p "$(echo -e "(${cyan}y/N${none} Default No): ")" run_tests
-    [[ -z "$run_tests" ]] && run_tests="N"
+    if [[ -n "${V2RAY_RUN_TESTS:-}" ]]; then
+        run_tests="$V2RAY_RUN_TESTS"
+    else
+        read -p "$(echo -e "(${cyan}y/N${none} Default No): ")" run_tests
+        [[ -z "$run_tests" ]] && run_tests="N"
+    fi
     if [[ "$run_tests" != [yY] ]]; then
         return 0
     fi
@@ -904,11 +908,15 @@ qrencode -t ANSI $v2ray_vless_url >> ~/_v2ray_vless_url_
 
 # 是否切换为vmess协议
 echo 
-echo -e "切换成${magenta}Vmess${none}协议吗? Switch to ${magenta}Vmess${none} protocol?"
-echo "如果你不懂这段话是什么意思, 请直接回车"
-read -p "$(echo -e "(${cyan}y/N${none} Default No):") " switchVmess
-if [[ -z "$switchVmess" ]]; then
-    switchVmess='N'
+if [[ -n "${V2RAY_SWITCH_VMESS:-}" ]]; then
+    switchVmess="$V2RAY_SWITCH_VMESS"
+else
+    echo -e "切换成${magenta}Vmess${none}协议吗? Switch to ${magenta}Vmess${none} protocol?"
+    echo "如果你不懂这段话是什么意思, 请直接回车"
+    read -p "$(echo -e "(${cyan}y/N${none} Default No):") " switchVmess
+    if [[ -z "$switchVmess" ]]; then
+        switchVmess='N'
+    fi
 fi
 if [[ "$switchVmess" == [yY] ]]; then
     echo "${red}注意, 切换为vmess协议后, 刚刚的vless链接就失效了.${none}"
@@ -962,7 +970,13 @@ if [[ $netstack == "6" ]]; then
     echo -e "$yellow这是一个 IPv6 小鸡，用 WARP 创建 IPv4 出站$none"
     echo "Telegram电报是直接访问IPv4地址的, 需要IPv4出站的能力"    
     echo "----------------------------------------------------------------"
-    pause
+    if [[ "${V2RAY_INSTALL_WARP:-ask}" == "n" || "${V2RAY_INSTALL_WARP:-ask}" == "N" ]]; then
+        echo -e "$yellow已跳过 WARP 安装$none"
+        exit 0
+    fi
+    if [[ "${V2RAY_INSTALL_WARP:-ask}" != [yY] ]]; then
+        pause
+    fi
 
     # 安装 WARP IPv4
     curl -LO https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh
@@ -989,7 +1003,13 @@ elif  [[ $netstack == "4" ]]; then
     echo -e "教程: ${cyan} https://zelikk.blogspot.com/2022/03/racknerd-v2ray-cloudflare-warp--ipv6-google-domainstrategy-outboundtag-routing.html ${none}"
     echo -e "视频: ${cyan} https://youtu.be/Yvvm4IlouEk ${none}"
     echo "----------------------------------------------------------------"
-    pause
+    if [[ "${V2RAY_INSTALL_WARP:-ask}" == "n" || "${V2RAY_INSTALL_WARP:-ask}" == "N" ]]; then
+        echo -e "$yellow已跳过 WARP 安装$none"
+        exit 0
+    fi
+    if [[ "${V2RAY_INSTALL_WARP:-ask}" != [yY] ]]; then
+        pause
+    fi
 
     # 安装 WARP IPv6    
     curl -LO https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh
