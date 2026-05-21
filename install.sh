@@ -17,6 +17,10 @@ is_valid_port() {
     [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
 }
 
+is_valid_email() {
+    [[ "$1" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] && [[ ! "$1" =~ @example\. ]]
+}
+
 sanitize_node_name() {
     echo -n "$1" | tr ' /#?&' '_____' | sed -E 's/[^A-Za-z0-9._-]/_/g; s/_+/_/g; s/^_//; s/_$//'
 }
@@ -55,8 +59,55 @@ detect_node_location() {
     fi
 }
 
+prepare_dns01_cert_config() {
+    use_dns01_cert=0
+
+    if [[ -n "$CF_Token" && -n "$CF_Zone_ID" ]]; then
+        use_dns01_cert=1
+    elif [[ "$caddy_port" != "443" || "$external_port" != "$caddy_port" ]]; then
+        echo
+        echo -e "$yellow检测到 NAT/非标准端口场景, 建议使用 Cloudflare DNS-01 申请证书$none"
+        echo "如果跳过, Caddy 可能需要公网 80/443 才能自动申请证书。"
+        read -p "$(echo -e "现在配置 DNS-01 证书吗? (${cyan}Y/n${none}): ")" setup_dns01
+        [[ -z "$setup_dns01" ]] && setup_dns01="Y"
+        if [[ "$setup_dns01" == [yY] ]]; then
+            use_dns01_cert=1
+        fi
+    fi
+
+    if [[ "$use_dns01_cert" != "1" ]]; then
+        return 0
+    fi
+
+    while [[ -z "$CF_Token" ]]; do
+        read -rsp "$(echo -e "Cloudflare API Token: ")" CF_Token
+        echo
+        if [[ -n "$CF_Token" ]]; then
+            echo -e "Token length: ${cyan}${#CF_Token}${none}, head: ${cyan}${CF_Token:0:8}******${none}"
+            read -p "$(echo -e "确认这个 Token 吗? (${cyan}Y/n${none}): ")" confirm_cf_token
+            [[ -z "$confirm_cf_token" ]] && confirm_cf_token="Y"
+            if [[ "$confirm_cf_token" != [yY] ]]; then
+                CF_Token=""
+            fi
+        fi
+    done
+
+    while [[ -z "$CF_Zone_ID" ]]; do
+        read -p "$(echo -e "Cloudflare Zone ID: ")" CF_Zone_ID
+    done
+
+    acme_email="${ACME_EMAIL:-}"
+    while ! is_valid_email "$acme_email"; do
+        if [[ -n "$acme_email" ]]; then
+            echo -e "$red ACME 邮箱无效, 不能使用 example.com 这类保留域名$none"
+        fi
+        read -p "$(echo -e "ACME/Let's Encrypt 联系邮箱: ")" acme_email
+    done
+    export ACME_EMAIL="$acme_email"
+}
+
 install_dns01_cert_if_configured() {
-    if [[ -z "$CF_Token" || -z "$CF_Zone_ID" ]]; then
+    if [[ "$use_dns01_cert" != "1" || -z "$CF_Token" || -z "$CF_Zone_ID" ]]; then
         return 0
     fi
 
@@ -65,12 +116,17 @@ install_dns01_cert_if_configured() {
     echo "----------------------------------------------------------------"
 
     if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
-        curl https://get.acme.sh | sh -s email=admin@example.com
+        curl https://get.acme.sh | sh -s email="$ACME_EMAIL"
     fi
 
     if [[ ! -x "$HOME/.acme.sh/acme.sh" ]]; then
         echo -e "$red acme.sh 安装失败, 请检查网络后重试$none"
         exit 1
+    fi
+
+    if grep -q "example.com" "$HOME/.acme.sh/account.conf" 2>/dev/null; then
+        cp "$HOME/.acme.sh/account.conf" "$HOME/.acme.sh/account.conf.bak.$(date +%s)"
+        sed -i "s/[A-Za-z0-9._%+-]*@example\.com/$ACME_EMAIL/g" "$HOME/.acme.sh/account.conf"
     fi
 
     export CF_Token
@@ -79,19 +135,82 @@ install_dns01_cert_if_configured() {
     "$HOME/.acme.sh/acme.sh" --set-account-conf --accountconf "$HOME/.acme.sh/account.conf" --name CF_Token --value "$CF_Token"
     "$HOME/.acme.sh/acme.sh" --set-account-conf --accountconf "$HOME/.acme.sh/account.conf" --name CF_Zone_ID --value "$CF_Zone_ID"
 
-    "$HOME/.acme.sh/acme.sh" --issue --dns dns_cf -d "$domain" --server letsencrypt
+    "$HOME/.acme.sh/acme.sh" --register-account -m "$ACME_EMAIL" --server letsencrypt \
+        || "$HOME/.acme.sh/acme.sh" --update-account -m "$ACME_EMAIL" --server letsencrypt \
+        || {
+            echo -e "$red ACME 账户注册/更新失败, 请检查邮箱$none"
+            exit 1
+        }
+
+    "$HOME/.acme.sh/acme.sh" --issue --dns dns_cf -d "$domain" --server letsencrypt || {
+        echo -e "$red DNS-01 证书签发失败, 请检查 Cloudflare Token/Zone ID/域名$none"
+        exit 1
+    }
 
     mkdir -p "/etc/caddy/certs/$domain"
     "$HOME/.acme.sh/acme.sh" --install-cert -d "$domain" \
         --key-file "/etc/caddy/certs/$domain/key.pem" \
         --fullchain-file "/etc/caddy/certs/$domain/fullchain.pem" \
-        --reloadcmd "systemctl reload caddy 2>/dev/null || true"
+        --reloadcmd "systemctl reload caddy 2>/dev/null || true" || {
+            echo -e "$red DNS-01 证书安装失败$none"
+            exit 1
+        }
 
     chown -R caddy:caddy /etc/caddy/certs
     chmod 600 "/etc/caddy/certs/$domain/key.pem"
     chmod 644 "/etc/caddy/certs/$domain/fullchain.pem"
 
+    if [[ ! -s "/etc/caddy/certs/$domain/key.pem" || ! -s "/etc/caddy/certs/$domain/fullchain.pem" ]]; then
+        echo -e "$red DNS-01 证书安装失败: key.pem 或 fullchain.pem 不存在/为空$none"
+        exit 1
+    fi
+
     caddy_tls_line="tls /etc/caddy/certs/$domain/fullchain.pem /etc/caddy/certs/$domain/key.pem"
+}
+
+run_install_tests() {
+    local local_url="https://127.0.0.1:${caddy_port}/"
+    local external_url="https://${domain}:${external_port}/"
+    local test_file="$HOME/_v2ray_test_commands_"
+
+    cat >"$test_file" <<-EOF
+caddy validate --config /etc/caddy/Caddyfile
+systemctl status caddy --no-pager -l
+systemctl status v2ray --no-pager -l
+ss -lntp | grep ':${caddy_port}'
+curl -vk --connect-timeout 10 ${local_url}
+curl -vk --connect-timeout 10 ${external_url}
+EOF
+
+    echo
+    echo -e "$yellow安装测试命令已保存到 ${cyan}${test_file}${none}"
+    echo -e "现在运行基础测试吗? 会测试 Caddy 配置、本机端口和外部端口。"
+    read -p "$(echo -e "(${cyan}y/N${none} Default No): ")" run_tests
+    [[ -z "$run_tests" ]] && run_tests="N"
+    if [[ "$run_tests" != [yY] ]]; then
+        return 0
+    fi
+
+    echo
+    echo -e "$yellow测试 Caddy 配置$none"
+    caddy validate --config /etc/caddy/Caddyfile || return 1
+
+    echo
+    echo -e "$yellow检查服务状态$none"
+    systemctl --no-pager -l status caddy || true
+    systemctl --no-pager -l status v2ray || true
+
+    echo
+    echo -e "$yellow检查本机监听端口 ${caddy_port}$none"
+    ss -lntp | grep ":${caddy_port}" || true
+
+    echo
+    echo -e "$yellow测试本机 Caddy: ${local_url}$none"
+    curl -vk --connect-timeout 10 "$local_url" || true
+
+    echo
+    echo -e "$yellow测试外部入口: ${external_url}$none"
+    curl -vk --connect-timeout 10 "$external_url" || true
 }
 
 warn() {
@@ -141,6 +260,7 @@ default_uuid=$(curl -sL https://www.uuidtools.com/api/generate/v3/namespace/ns:d
 default_port=$(shuf -i20001-65535 -n1)
 default_web_port=443
 has_args=0
+use_dns01_cert=0
 
 # 执行脚本带参数
 if [ $# -ge 1 ]; then
@@ -210,7 +330,9 @@ if [ $# -ge 1 ]; then
     echo -e "proxy_site: ${proxy_site}"
 fi
 
-pause
+if [[ "$has_args" != "1" ]]; then
+    pause
+fi
 
 # 准备工作
 apt update
@@ -524,6 +646,8 @@ if [[ -z $proxy_site ]]; then
     done
 fi
 
+prepare_dns01_cert_config
+
 # 配置 /usr/local/etc/v2ray/config.json
 echo
 echo -e "$yellow配置 /usr/local/etc/v2ray/config.json$none"
@@ -686,7 +810,7 @@ if [[ "$caddy_port" == "443" ]]; then
 else
     caddy_site="${domain}:${caddy_port}"
 fi
-caddy_tls_line="tls Y3JhenlwZWFjZQ@gmail.com"
+caddy_tls_line=""
 install_dns01_cert_if_configured
 cat >/etc/caddy/Caddyfile <<-EOF
 $caddy_site
@@ -829,6 +953,8 @@ elif [[ "$switchVmess" == [nN] ]]; then
 else
     error
 fi
+
+run_install_tests
 
 # 如果是 IPv6 小鸡，用 WARP 创建 IPv4 出站
 if [[ $netstack == "6" ]]; then

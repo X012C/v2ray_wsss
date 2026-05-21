@@ -1,6 +1,6 @@
 # v2ray_wsss
 
-VLESS / VMesss over WebSocket + TLS 一键部署脚本，默认使用 Caddy 作为前置反代。
+VLESS / VMess over WebSocket + TLS 一键部署脚本，默认使用 Caddy 作为前置反代。
 
 ## 安装
 
@@ -37,11 +37,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/instal
 如果机器没有可用的公网 `80/443`, 可提前配置 Cloudflare DNS-01:
 
 ```bash
+export ACME_EMAIL="your-email@gmail.com"
 export CF_Token="Cloudflare_API_Token"
 export CF_Zone_ID="Cloudflare_Zone_ID"
 ```
 
-Token 需要具备当前 zone 的 DNS 编辑权限。脚本检测到以上变量后，会通过 acme.sh 申请证书，并让 Caddy 使用本地证书文件。
+Token 需要具备当前 zone 的 DNS 编辑权限。脚本检测到以上变量后，会通过 acme.sh 申请证书，并让 Caddy 使用本地证书文件。NAT/非标准端口场景下，如果没有提前设置这些变量，脚本会提示是否现场配置 DNS-01。
+
+安装结束后脚本会询问是否运行基础测试，并把当前参数对应的测试命令保存到 `~/_v2ray_test_commands_`。
 
 ## Cloudflare CDN
 
