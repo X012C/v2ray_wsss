@@ -143,9 +143,32 @@ generate_short_id() {
 }
 
 generate_reality_keys() {
-    keys="$("$XRAY_BIN" x25519)"
-    private_key="$(echo "$keys" | awk -F': ' '/Private key/ {print $2}')"
-    public_key="$(echo "$keys" | awk -F': ' '/Public key/ {print $2}')"
+    if ! keys="$("$XRAY_BIN" x25519 2>&1)"; then
+        echo "$keys" >&2
+        die "Failed to run: $XRAY_BIN x25519"
+    fi
+
+    private_key="$(
+        printf '%s\n' "$keys" |
+            sed -n \
+                -e 's/^[Pp]rivate[Kk]ey:[[:space:]]*//p' \
+                -e 's/^[Pp]rivate[[:space:]]*[Kk]ey:[[:space:]]*//p' |
+            head -n 1
+    )"
+    public_key="$(
+        printf '%s\n' "$keys" |
+            sed -n \
+                -e 's/^[Pp]ublic[Kk]ey:[[:space:]]*//p' \
+                -e 's/^[Pp]ublic[[:space:]]*[Kk]ey:[[:space:]]*//p' \
+                -e 's/^[Pp]assword[[:space:]]*(Public[Kk]ey):[[:space:]]*//p' \
+                -e 's/^[Pp]assword[[:space:]]*(Public[[:space:]]*[Kk]ey):[[:space:]]*//p' |
+            head -n 1
+    )"
+
+    if [ -z "$private_key" ] || [ -z "$public_key" ]; then
+        echo "Unexpected xray x25519 output:" >&2
+        printf '%s\n' "$keys" >&2
+    fi
     [ -n "$private_key" ] || die "Failed to generate Reality private key."
     [ -n "$public_key" ] || die "Failed to generate Reality public key."
 }
