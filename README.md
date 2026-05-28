@@ -74,6 +74,16 @@ NAT 高位端口可以通过 Cloudflare Origin Rule 回源:
 
 不建议使用 `Flexible`，它不适合源站已经启用 HTTPS / WSS 的场景。
 
+## Extras
+
+极小 Alpine VPS 不适合 Caddy/WSS 主脚本，可参考附加脚本:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/X012C/v2ray_wsss/main/extras/alpine-reality.sh | sh -s 443 US-ALPINE-01
+```
+
+该脚本只安装 Xray Reality，不属于 Caddy/WSS 主线。
+
 ## 卸载
 
 ```bash
